@@ -1,0 +1,157 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import Quickshell.Hyprland
+import QtQuick.Controls
+import QtQuick.Layouts
+import Qt.labs.folderlistmodel
+
+Item {
+  id: root
+  property var bar
+  property string moduleName
+  property var settings
+  implicitWidth: 28
+  implicitHeight: bar ? bar.barSize : 26
+  readonly property color ink: bar ? bar.foreground : "white"
+  onInkChanged: icon.requestPaint()
+  Canvas {
+    id: icon
+    anchors.centerIn: parent
+    width: 19; height: 19
+    onPaint: {
+      const c = getContext("2d"); c.reset(); c.strokeStyle = root.ink;
+      c.fillStyle = root.ink; c.lineWidth = 1.5; c.lineCap = "round";
+      c.beginPath(); c.moveTo(2,7); c.lineTo(2,3); c.lineTo(17,3);
+      c.lineTo(17,14); c.lineTo(11,14); c.stroke();
+      c.beginPath(); c.arc(2,16,4,-Math.PI/2,0); c.stroke();
+      c.beginPath(); c.arc(2,16,8,-Math.PI/2,0); c.stroke();
+      c.beginPath(); c.arc(2,16,1,0,2*Math.PI); c.fill();
+    }
+  }
+  IpcHandler { target: "local.cast"; function open(): void { popup.visible = true; root.scan(); } }
+  property var devices: []
+  property string chosenFile: ""
+  function togglePicker() {
+    popup.visible = !popup.visible;
+    if (popup.visible) scan();
+  }
+  function scan() {
+    if (discovery.running) return;
+    status.text = "Scanning LAN…";
+    discovery.command = ["/usr/bin/python3", "@HOME@/.local/state/video-cast/devices.py"];
+    if (address.text.trim()) discovery.command = discovery.command.concat([address.text.trim()]);
+    discovery.running = true;
+  }
+  Process {
+    id: discovery
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          root.devices = JSON.parse(text);
+          devicesBox.model = root.devices.map(d => d.name + " — " + d.ip);
+          status.text = root.devices.length ? "Choose a video below." : "No DLNA receivers found. Turn on a receiver and scan again.";
+        } catch (e) { status.text = "Discovery failed. Check the device IP and retry."; }
+      }
+    }
+  }
+  PopupWindow {
+    id: popup
+    visible: false
+    implicitWidth: 490
+    implicitHeight: 600
+    color: root.bar ? root.bar.background : "#171b24"
+    anchor {
+      id: popupAnchor
+      window: root.QsWindow.window
+      adjustment: PopupAdjustment.Slide
+      edges: Edges.Top | Edges.Left
+      gravity: Edges.Bottom | Edges.Right
+      onAnchoring: {
+        const p = root.mapToItem(root.QsWindow.window.contentItem, 0, root.height + 6);
+        popupAnchor.rect.x = p.x - popup.width + root.width;
+        popupAnchor.rect.y = p.y;
+      }
+    }
+    HyprlandFocusGrab {
+      active: popup.visible
+      windows: [popup, root.QsWindow.window]
+      onCleared: popup.visible = false
+    }
+    ColumnLayout {
+      anchors.fill: parent
+      anchors.margins: 16
+      spacing: 10
+      RowLayout {
+        Label { text: "Cast video"; font.bold: true; Layout.fillWidth: true; color: root.ink }
+        Button { text: "Close"; onClicked: popup.visible = false }
+      }
+      ComboBox { id: devicesBox; Layout.fillWidth: true }
+      RowLayout {
+        TextField { id: address; placeholderText: "Optional device IP"; Layout.fillWidth: true; onAccepted: root.scan() }
+        Button { text: discovery.running ? "Scanning…" : "Scan LAN"; enabled: !discovery.running; onClicked: root.scan() }
+      }
+      RowLayout {
+        Button { text: "Up"; onClicked: files.folder = files.parentFolder }
+        Button { text: "Videos"; onClicked: files.folder = "file://@HOME@/Videos" }
+        Label { text: decodeURIComponent(files.folder.toString().replace("file://", "")); elide: Text.ElideMiddle; Layout.fillWidth: true; color: root.ink }
+      }
+      FolderListModel {
+        id: files
+        folder: "file://@HOME@/Videos"
+        nameFilters: ["*.mp4", "*.mkv", "*.mov", "*.webm", "*.m4v", "*.avi"]
+        showDirs: true
+        showDotAndDotDot: false
+        showHidden: false
+        sortField: FolderListModel.Name
+        showDirsFirst: true
+      }
+      ListView {
+        id: listing
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        clip: true
+        model: files
+        ScrollBar.vertical: ScrollBar {}
+        delegate: ItemDelegate {
+          required property string fileName
+          required property url fileUrl
+          required property bool fileIsDir
+          width: listing.width
+          text: (fileIsDir ? "▸  " : "    ") + fileName
+          highlighted: root.chosenFile === fileUrl.toString()
+          onClicked: {
+            if (fileIsDir) files.folder = fileUrl;
+            else root.chosenFile = fileUrl.toString();
+          }
+        }
+      }
+      Label { text: root.chosenFile ? decodeURIComponent(root.chosenFile.split("/").pop()) : "Select a video"; elide: Text.ElideMiddle; Layout.fillWidth: true; color: root.ink }
+      Label { id: status; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: root.ink }
+      Button {
+        text: "Cast"
+        Layout.fillWidth: true
+        enabled: root.chosenFile !== "" && devicesBox.currentIndex >= 0 && root.devices.length > 0
+        onClicked: {
+          Quickshell.execDetached(["@HOME@/.local/bin/omarchy-cast", root.chosenFile, JSON.stringify(root.devices[devicesBox.currentIndex])]);
+          popup.visible = false;
+        }
+      }
+      Label { text: "DLNA receivers · Large videos are optimized automatically"; font.pixelSize: 11; color: root.ink }
+    }
+  }
+  MouseArea {
+    anchors.fill: parent
+    hoverEnabled: true
+    cursorShape: Qt.PointingHandCursor
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+    onEntered: if (root.bar) root.bar.showTooltip(root, "Cast to LAN device\nClick: choose device and video · Right-click: restart · Middle-click: stop")
+    onExited: if (root.bar) root.bar.hideTooltip(root)
+    onClicked: mouse => {
+      if (root.bar) root.bar.hideTooltip(root);
+      if (mouse.button === Qt.LeftButton) root.togglePicker();
+      else Quickshell.execDetached(["@HOME@/.local/bin/omarchy-cast", mouse.button === Qt.RightButton ? "--restart" : "--stop"]);
+    }
+  }
+}

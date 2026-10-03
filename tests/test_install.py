@@ -61,3 +61,38 @@ class RangeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class PlaybackTests(unittest.TestCase):
+    def setUp(self):
+        from importlib.machinery import SourceFileLoader
+        from unittest.mock import patch
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        with patch('pathlib.Path.home', return_value=Path(self.tmp.name)):
+            loader = SourceFileLoader('playback_controller', str(ROOT/'templates/omarchy-cast'))
+            spec = importlib.util.spec_from_loader(loader.name, loader)
+            self.mod = importlib.util.module_from_spec(spec)
+            loader.exec_module(self.mod)
+
+    def test_seek_clamps_to_media_duration(self):
+        from unittest.mock import patch
+        with patch.object(self.mod, 'soap', return_value=b'<r><RelTime>00:00:55</RelTime><TrackDuration>00:01:00</TrackDuration></r>') as soap:
+            self.mod.playback('skip', 10)
+            self.assertEqual(soap.call_args.args, ('Seek',))
+            self.assertEqual(soap.call_args.kwargs, {'Unit':'REL_TIME','Target':'00:00:59'})
+
+    def test_toggle_reads_remote_state(self):
+        from unittest.mock import patch
+        with patch.object(self.mod, 'soap', return_value=b'<r><CurrentTransportState>PLAYING</CurrentTransportState></r>') as soap:
+            self.mod.playback('toggle')
+            self.assertEqual(soap.call_args.args, ('Pause',))
+
+    def test_volume_uses_rendering_service_and_clamps(self):
+        from unittest.mock import patch
+        with patch.object(self.mod, 'soap') as soap:
+            self.mod.playback('volume', 200)
+            soap.assert_called_once_with('SetVolume', _render=True, Channel='Master', DesiredVolume=100)
+
+    def test_fractional_tv_timestamp(self):
+        self.assertEqual(self.mod.seconds('0:01:02.500'), 62)
+        self.assertEqual(self.mod.timestamp(62), '00:01:02')

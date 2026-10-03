@@ -30,6 +30,33 @@ Item {
     }
   }
   IpcHandler { target: "local.cast"; function open(): void { popup.visible = true; root.scan(); } }
+  property var playback: ({ok: false, state: "UNKNOWN", position: 0, duration: 0, volume: null, muted: null})
+  property string playbackError: ""
+  function timeLabel(n) { n = Math.max(0, Math.floor(n || 0)); return Math.floor(n / 60) + ":" + (n % 60 < 10 ? "0" : "") + n % 60; }
+  function control(command, value) {
+    if (controller.running) return;
+    let request = {command: command};
+    if (value !== undefined) request.value = value;
+    if (devicesBox.currentIndex >= 0 && devicesBox.currentIndex < root.devices.length) request.target = root.devices[devicesBox.currentIndex];
+    controller.operation = command;
+    if (command !== "status") root.playbackError = "";
+    controller.command = ["@HOME@/.local/bin/omarchy-cast", "--control", JSON.stringify(request)];
+    controller.running = true;
+  }
+  Process {
+    id: controller
+    property string operation: "status"
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          const result = JSON.parse(text);
+          if (!result.ok) { root.playbackError = result.error; if (controller.operation === "status") root.playback = {ok: false}; }
+          else { if (controller.operation !== "status") root.playbackError = ""; if (result.state) root.playback = result; }
+        } catch (e) { root.playbackError = "Receiver did not respond."; root.playback = {ok: false}; }
+      }
+    }
+  }
+  Timer { interval: 3000; running: popup.visible; repeat: true; triggeredOnStart: true; onTriggered: root.control("status") }
   property var devices: []
   property string chosenFile: ""
   function togglePicker() {
@@ -59,7 +86,7 @@ Item {
     id: popup
     visible: false
     implicitWidth: 490
-    implicitHeight: 600
+    implicitHeight: 790
     color: root.bar ? root.bar.background : "#171b24"
     anchor {
       id: popupAnchor
@@ -83,7 +110,33 @@ Item {
         Label { text: "Cast video"; font.bold: true; Layout.fillWidth: true; color: root.ink }
         Button { text: "Close"; onClicked: popup.visible = false }
       }
-      ComboBox { id: devicesBox; Layout.fillWidth: true }
+      ComboBox { id: devicesBox; Layout.fillWidth: true; onActivated: { root.playback = {ok: false}; root.control("status"); } }
+      Label { text: root.playbackError || (root.playback.ok ? ((root.playback.name || "Receiver") + " · " + root.playback.state) : "Checking playback…"); color: root.ink; Layout.fillWidth: true; elide: Text.ElideRight }
+      RowLayout {
+        enabled: root.playback.ok && !controller.running
+        Button { text: "Restart"; onClicked: root.control("restart") }
+        Button { text: "−10s"; onClicked: root.control("skip", -10) }
+        Button { text: root.playback.state === "PLAYING" ? "Pause" : "Play"; onClicked: root.control("toggle") }
+        Button { text: "+10s"; onClicked: root.control("skip", 10) }
+        Button { text: "Stop"; onClicked: root.control("stop") }
+      }
+      RowLayout {
+        Label { text: root.timeLabel(root.playback.position); color: root.ink }
+        Slider {
+          Layout.fillWidth: true
+          from: 0; to: Math.max(1, root.playback.duration || 0)
+          value: root.playback.position || 0
+          enabled: root.playback.ok && root.playback.duration > 0 && !controller.running
+          onPressedChanged: if (!pressed) root.control("seek", value)
+        }
+        Label { text: root.timeLabel(root.playback.duration); color: root.ink }
+      }
+      RowLayout {
+        enabled: root.playback.ok && root.playback.volume !== null && root.playback.volume !== undefined && !controller.running
+        Button { text: root.playback.muted ? "Unmute" : "Mute"; onClicked: root.control("mute") }
+        Slider { Layout.fillWidth: true; from: 0; to: 100; value: root.playback.volume || 0; onPressedChanged: if (!pressed) root.control("volume", Math.round(value)) }
+        Label { text: (root.playback.volume === null || root.playback.volume === undefined) ? "N/A" : root.playback.volume + "%"; color: root.ink }
+      }
       RowLayout {
         TextField { id: address; placeholderText: "Optional device IP"; Layout.fillWidth: true; onAccepted: root.scan() }
         Button { text: discovery.running ? "Scanning…" : "Scan LAN"; enabled: !discovery.running; onClicked: root.scan() }
@@ -131,7 +184,7 @@ Item {
         enabled: root.chosenFile !== "" && devicesBox.currentIndex >= 0 && root.devices.length > 0
         onClicked: {
           Quickshell.execDetached(["@HOME@/.local/bin/omarchy-cast", root.chosenFile, JSON.stringify(root.devices[devicesBox.currentIndex])]);
-          popup.visible = false;
+          status.text = "Preparing playback…";
         }
       }
       Label { text: "DLNA receivers · Large videos are optimized automatically"; font.pixelSize: 11; color: root.ink }

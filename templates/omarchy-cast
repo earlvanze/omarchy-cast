@@ -9,12 +9,15 @@ TARGET=json.loads((STATE/'target.json').read_text()) if (STATE/'target.json').ex
 URL='http://@LAN_IP@:18794/tv.mp4'
 def notify(message):
  subprocess.run(['notify-send','Cast video',message],check=False)
-def soap(action,**args):
+def soap(action, _render=False, **args):
  if TARGET is None:raise RuntimeError('Choose a receiver from the cast button first.')
+ service=TARGET.get('render_service') if _render else TARGET['service']
+ endpoint=TARGET.get('render_control') if _render else TARGET['control']
+ if not endpoint or not service:raise RuntimeError('Volume control is not available on this receiver.')
  fields=''.join(f'<{k}>{html.escape(str(v))}</{k}>' for k,v in {'InstanceID':0,**args}.items())
- body=f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:{action} xmlns:u="{TARGET["service"]}">{fields}</u:{action}></s:Body></s:Envelope>'
- req=urllib.request.Request(TARGET['control'],data=body.encode(),headers={'Content-Type':'text/xml','SOAPAction':f'"{TARGET["service"]}#{action}"'})
- return urllib.request.urlopen(req,timeout=12).read()
+ body=f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><u:{action} xmlns:u="{service}">{fields}</u:{action}></s:Body></s:Envelope>'
+ req=urllib.request.Request(endpoint,data=body.encode(),headers={'Content-Type':'text/xml','SOAPAction':f'"{service}#{action}"'})
+ return urllib.request.urlopen(req,timeout=4).read()
 def stop():
  try:soap('Stop')
  except urllib.error.HTTPError as exc:
@@ -24,9 +27,72 @@ def stop():
   except ET.ParseError:raise exc
   if code!='701':raise exc
 
+def fields(data):
+ return {node.tag.split('}')[-1]: node.text or '' for node in ET.fromstring(data).iter()}
+
+def seconds(text):
+ try:
+  h,m,s=text.split(':');return int(int(h)*3600+int(m)*60+float(s))
+ except (ValueError,AttributeError):return 0
+
+def timestamp(value):
+ value=max(0,int(value));return f'{value//3600:02}:{value//60%60:02}:{value%60:02}'
+
+def playback(command, value=None):
+ if command=='status':
+  transport=fields(soap('GetTransportInfo'))
+  result={'ok':True,'name':TARGET['name'],'state':transport.get('CurrentTransportState','UNKNOWN'),'position':0,'duration':0,'volume':None,'muted':None}
+  try:
+   position=fields(soap('GetPositionInfo'));result.update(position=seconds(position.get('RelTime')),duration=seconds(position.get('TrackDuration')))
+  except Exception:pass
+  if TARGET.get('render_control'):
+   try:
+    result['volume']=int(fields(soap('GetVolume',_render=True,Channel='Master'))['CurrentVolume'])
+    result['muted']=fields(soap('GetMute',_render=True,Channel='Master'))['CurrentMute']=='1'
+   except Exception:pass
+  return result
+ if command=='toggle':
+  state=fields(soap('GetTransportInfo')).get('CurrentTransportState')
+  soap('Pause') if state=='PLAYING' else soap('Play',Speed=1)
+ elif command=='play':soap('Play',Speed=1)
+ elif command=='pause':soap('Pause')
+ elif command=='stop':stop()
+ elif command in ('seek','skip','restart'):
+  info=fields(soap('GetPositionInfo'));duration=seconds(info.get('TrackDuration'))
+  target=0 if command=='restart' else float(value)
+  if command=='skip':target+=seconds(info.get('RelTime'))
+  target=max(0,min(target,max(0,duration-1))) if duration else max(0,target)
+  soap('Seek',Unit='REL_TIME',Target=timestamp(target))
+  if command=='restart':soap('Play',Speed=1)
+ elif command=='volume':soap('SetVolume',_render=True,Channel='Master',DesiredVolume=max(0,min(100,int(value))))
+ elif command=='mute':
+  muted=fields(soap('GetMute',_render=True,Channel='Master'))['CurrentMute']=='1'
+  soap('SetMute',_render=True,Channel='Master',DesiredMute=0 if muted else 1)
+ else:raise ValueError('Unknown playback command')
+ return {'ok':True}
+
 def main():
  global TARGET
  arg=sys.argv[1] if len(sys.argv)>1 else '--status'
+ if arg=='--control':
+  try:
+   request=json.loads(sys.argv[2])
+   if request.get('target'):
+    candidate=request['target']
+    import ipaddress
+    if ipaddress.ip_address(candidate['ip']) not in ipaddress.ip_network('@LAN_NETWORK@'):raise ValueError('Receiver outside LAN')
+    for key in ['control','render_control']:
+     if candidate.get(key) and (urllib.parse.urlparse(candidate[key]).hostname!=candidate['ip'] or urllib.parse.urlparse(candidate[key]).scheme!='http'):raise ValueError('Invalid receiver endpoint')
+    TARGET=candidate
+   print(json.dumps(playback(request.get('command','status'),request.get('value'))))
+  except Exception as exc:
+   message=str(exc)
+   if isinstance(exc,urllib.error.HTTPError):
+    try:
+     fault=fields(exc.read());message='Receiver rejected command: '+fault.get('errorDescription','unsupported action')+' ('+fault.get('errorCode',str(exc.code))+')'
+    except Exception:pass
+   print(json.dumps({'ok':False,'error':message}))
+  return
  if arg=='--status':
   print(soap('GetTransportInfo').decode());return
  if arg=='--stop':

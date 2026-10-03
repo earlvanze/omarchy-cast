@@ -11,7 +11,13 @@ def describe(url):
     if ':AVTransport:' in kind:
      control=urllib.parse.urljoin(url,service.findtext('d:controlURL','',NS))
      if urllib.parse.urlparse(control).hostname!=host:return None
-     return {'name':device.findtext('d:friendlyName',host,NS),'ip':host,'control':control,'service':kind}
+     result={'name':device.findtext('d:friendlyName',host,NS),'ip':host,'control':control,'service':kind}
+     for other in device.findall('d:serviceList/d:service',NS):
+      if ':RenderingControl:' in other.findtext('d:serviceType','',NS):
+       endpoint=urllib.parse.urljoin(url,other.findtext('d:controlURL','',NS))
+       if urllib.parse.urlparse(endpoint).hostname==host:
+        result['render_control']=endpoint;result['render_service']=other.findtext('d:serviceType','',NS)
+     return result
  except Exception:pass
  return None
 def discover(manual=None):

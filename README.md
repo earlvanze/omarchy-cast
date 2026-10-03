@@ -10,6 +10,8 @@ The popup and file browser use QML throughout. Network discovery and video prepa
 - SSDP discovery, Samsung LAN discovery fallback, and manual IP lookup
 - 1080p / 30 fps playback copies with a 5 Mbps video ceiling
 - HTTP byte-range support for seeking
+- Play/pause, stop, restart, ±10-second seek, timeline, volume, and mute controls
+- TV playback status polled while the popup is open, including remote-control changes
 - Restart and stop shortcuts on the bar icon
 - Receiver-specific media access and UFW rules
 
@@ -41,6 +43,8 @@ The installer adds the cast icon beside the audio widget in `~/.config/omarchy/s
 - **Left-click:** open the embedded picker, choose a receiver and video, then Cast.
 - **Right-click:** restart the last video on the selected receiver.
 - **Middle-click:** stop playback.
+
+The menu stays open when casting starts. Playback controls act on the selected receiver; without a discovered selection they use the last saved receiver. TV remote controls remain handled by the TV’s native player. Seek, volume, and mute availability depends on the receiver and its current audio output; rejected commands show the receiver’s error. This tool does not install an overlay on the TV.
 
 For a newly selected receiver, approve the local administrator prompt to add a UFW rule allowing that device to reach this computer on TCP **18794**. These rules persist. The HTTP server additionally restricts access to the currently selected receiver and the configured host address.
 

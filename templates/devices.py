@@ -4,7 +4,7 @@ def describe(url):
  try:
   host=urllib.parse.urlparse(url).hostname
   if ipaddress.ip_address(host) not in ipaddress.ip_network('@LAN_NETWORK@'):return None
-  with urllib.request.urlopen(url,timeout=1.5) as r:root=ET.fromstring(r.read(262144))
+  with urllib.request.urlopen(url,timeout=4) as r:root=ET.fromstring(r.read(262144))
   for device in root.findall('.//d:device',NS):
    for service in device.findall('d:serviceList/d:service',NS):
     kind=service.findtext('d:serviceType','',NS)
@@ -31,11 +31,11 @@ def discover(manual=None):
  # Samsung discovery fallback when multicast is filtered; read-only LAN probes.
  hosts=[str(ipaddress.ip_address(manual))] if manual else [str(ip) for ip in ipaddress.ip_network('@LAN_NETWORK@').hosts()]
  def samsung(host):
-  sock=socket.socket();sock.settimeout(.2)
+  sock=socket.socket();sock.settimeout(1)
   try:sock.connect((host,9197));return 'http://'+host+':9197/dmr'
   except OSError:return None
   finally:sock.close()
- with concurrent.futures.ThreadPoolExecutor(max_workers=48) as pool:
+ with concurrent.futures.ThreadPoolExecutor(max_workers=32) as pool:
   urls.update(u for u in pool.map(samsung,hosts) if u)
  if manual:
   urls.update(f'http://{hosts[0]}:{port}/{path}' for port,path in [(1400,'xml/device_description.xml'),(49152,'description.xml'),(8008,'ssdp/device-desc.xml')])

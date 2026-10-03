@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import Quickshell.Hyprland
 import QtQuick.Controls
 import QtQuick.Layouts
 import Qt.labs.folderlistmodel
@@ -74,11 +73,8 @@ Item {
         popupAnchor.rect.y = p.y;
       }
     }
-    HyprlandFocusGrab {
-      active: popup.visible
-      windows: [popup, root.QsWindow.window]
-      onCleared: popup.visible = false
-    }
+    // Keep the picker open across focus changes and nested control popups.
+    // Close explicitly with the Close button, bar icon, or Cast action.
     ColumnLayout {
       anchors.fill: parent
       anchors.margins: 16

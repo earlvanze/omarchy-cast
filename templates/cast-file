@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""Nautilus Scripts entry: select one local video, then choose a receiver."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+uris=os.environ.get('NAUTILUS_SCRIPT_SELECTED_URIS','').splitlines()
+if not uris:
+ paths=os.environ.get('NAUTILUS_SCRIPT_SELECTED_FILE_PATHS','').splitlines()
+ uris=[Path(path).as_uri() for path in paths if path]
+if len(uris)!=1 or not uris[0].startswith('file:'):
+ subprocess.run(['notify-send','Cast video','Select one local video file, then choose Cast to TV.'])
+ sys.exit(1)
+result=subprocess.run(['quickshell','ipc','--any-display','-p','/usr/share/omarchy/shell','call','local.cast','selectFile',uris[0]],capture_output=True,text=True)
+if result.returncode:
+ subprocess.run(['notify-send','Cast video','The cast menu is unavailable. Restart the Omarchy shell and retry.'])
+sys.exit(result.returncode)

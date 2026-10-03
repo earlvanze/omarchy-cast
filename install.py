@@ -27,16 +27,18 @@ def install(home, host, network):
     modules = home / '.config/omarchy/bar/modules'
     bins = home / '.local/bin'
     units = home / '.config/systemd/user'
-    for directory in [state, modules, bins, units]:
+    scripts = home / '.local/share/nautilus/scripts'
+    for directory in [state, modules, bins, units, scripts]:
         directory.mkdir(parents=True, exist_ok=True)
     destinations = {'Cast.qml': modules/'Cast.qml', 'omarchy-cast': bins/'omarchy-cast',
-                    'devices.py': state/'devices.py', 'serve.py': state/'serve.py'}
+                    'devices.py': state/'devices.py', 'serve.py': state/'serve.py', 'cast-file': scripts/'Cast to TV'}
     for name, destination in destinations.items():
         text = (ROOT/'templates'/name).read_text()
         for key, value in {'@HOME@': str(home), '@LAN_IP@': str(address), '@LAN_NETWORK@': str(subnet)}.items():
             text = text.replace(key, value)
         destination.write_text(text)
     (bins/'omarchy-cast').chmod(0o755)
+    (scripts/'Cast to TV').chmod(0o755)
     (units/'video-cast.service').write_text(
         '[Unit]\nDescription=LAN video casting\n[Service]\n'
         f'ExecStart=/usr/bin/python3 "{state}/serve.py"\nRuntimeMaxSec=4h\n')

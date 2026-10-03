@@ -59,9 +59,6 @@ class RangeTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.byte_range(header,100)
 
-if __name__ == '__main__':
-    unittest.main()
-
 class PlaybackTests(unittest.TestCase):
     def setUp(self):
         from importlib.machinery import SourceFileLoader
@@ -96,3 +93,19 @@ class PlaybackTests(unittest.TestCase):
     def test_fractional_tv_timestamp(self):
         self.assertEqual(self.mod.seconds('0:01:02.500'), 62)
         self.assertEqual(self.mod.timestamp(62), '00:01:02')
+
+class FaststartTests(unittest.TestCase):
+    setUp = PlaybackTests.setUp
+    def test_index_must_precede_media(self):
+        import struct
+        path = Path(self.tmp.name)/'example.mp4'
+        def atom(kind): return struct.pack('>I4s',8,kind)
+        path.write_bytes(atom(b'ftyp')+atom(b'mdat')+atom(b'moov'))
+        self.assertFalse(self.mod.faststart(path))
+        path.write_bytes(atom(b'ftyp')+atom(b'moov')+atom(b'mdat'))
+        self.assertTrue(self.mod.faststart(path))
+        path.write_bytes(b'broken')
+        self.assertFalse(self.mod.faststart(path))
+
+if __name__ == '__main__':
+    unittest.main()

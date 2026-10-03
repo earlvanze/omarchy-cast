@@ -7,6 +7,8 @@ The popup and file browser use QML throughout. Network discovery and video prepa
 ## Features
 
 - Embedded device selector and video browser
+- Nautilus right-click → Scripts → Cast to TV
+- Automatic lossless fast-start remux for MP4 files with a trailing index
 - SSDP discovery, Samsung LAN discovery fallback, and manual IP lookup
 - 1080p / 30 fps playback copies with a 5 Mbps video ceiling
 - HTTP byte-range support for seeking
@@ -40,6 +42,8 @@ The installer adds the cast icon beside the audio widget in `~/.config/omarchy/s
 
 ## Use
 
+In the Files (Nautilus) app, right-click one local video and choose **Scripts → Cast to TV**. The embedded picker opens with that video selected; choose a receiver and press Cast. This does not start playback immediately.
+
 - **Left-click:** open the embedded picker, choose a receiver and video, then Cast.
 - **Right-click:** restart the last video on the selected receiver.
 - **Middle-click:** stop playback.
@@ -49,6 +53,8 @@ The menu stays open when casting starts. Playback controls act on the selected r
 For a newly selected receiver, approve the local administrator prompt to add a UFW rule allowing that device to reach this computer on TCP **18794**. These rules persist. The HTTP server additionally restricts access to the currently selected receiver and the configured host address.
 
 Discovery uses SSDP on the configured interface. The fallback probes Samsung's renderer port across the configured subnet, limited to at most 1024 addresses. Manual IP lookup supports several common renderer-description endpoints; receiver compatibility still depends on AVTransport support.
+
+Compatible MP4 files are also checked for index placement. If the MP4 index follows the media data, preparation creates a cached lossless fast-start copy. Existing fast-start files are reused; files needing transcoding already receive a front-loaded index.
 
 The video server starts on demand and stops after four hours. Optimized copies are cached under `~/.local/state/video-cast/`; they have no automatic eviction. This directory also contains local device selection and playback state. None of that runtime data belongs in a public repository.
 

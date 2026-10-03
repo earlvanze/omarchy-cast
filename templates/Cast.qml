@@ -29,7 +29,7 @@ Item {
       c.beginPath(); c.arc(2,16,1,0,2*Math.PI); c.fill();
     }
   }
-  IpcHandler { target: "local.cast"; function open(): void { popup.visible = true; root.scan(); } }
+  IpcHandler { target: "local.cast"; function open(): void { popup.visible = true; root.scan(); } function selectFile(uri: string): void { root.chosenFile = uri; popup.visible = true; root.scan(); } }
   property var playback: ({ok: false, state: "UNKNOWN", position: 0, duration: 0, volume: null, muted: null})
   property string playbackError: ""
   function timeLabel(n) { n = Math.max(0, Math.floor(n || 0)); return Math.floor(n / 60) + ":" + (n % 60 < 10 ? "0" : "") + n % 60; }
